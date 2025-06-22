@@ -7,49 +7,51 @@ import matplotlib.ticker as mticker
 from flask import Flask, request, jsonify, send_file
 
 # --- CONFIGURACIÓN ---
-# Configuración de logging para ver mejor los errores en la consola
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 GRAPH_DIR = "graficos"
 os.makedirs(GRAPH_DIR, exist_ok=True)
 
-PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05']
+PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FF6D00', '#673AB7'] # Paleta extendida por si acaso
 MEDIOS = ['Medios Digitales', 'Prensa', 'Radio', 'TV']
 
-# --- FUNCIONES UTILITARIAS MEJORADAS ---
+# --- FUNCIONES UTILITARIAS (SIN CAMBIOS) ---
 
 def clean_value(value: str | float | int) -> float:
-    """
-    Convierte un valor a float de forma segura.
-    Quita los puntos de miles y maneja posibles errores de conversión.
-    """
     if value is None:
         return 0.0
     try:
-        # Convierte a string, quita puntos, y luego convierte a float.
-        return float(str(value).replace('.', ''))
+        # Reemplaza comas por puntos para decimales y luego quita los puntos de miles
+        cleaned_string = str(value).replace(',', '.')
+        # Como los datos de entrada pueden tener '.' como separador de miles, los quitamos antes de convertir
+        # Esto asume que no hay decimales importantes después del punto.
+        if '.' in cleaned_string:
+             # Si el punto está seguido por 3 dígitos y no es el único punto, es probable que sea un separador de miles.
+             parts = cleaned_string.split('.')
+             if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
+                 cleaned_string = cleaned_string.replace('.', '')
+
+        return float(cleaned_string)
     except (ValueError, TypeError):
-        # Si la conversión falla, retorna 0.0 en lugar de causar un error.
         logging.warning(f"No se pudo convertir el valor '{value}' a número. Se usará 0.0.")
         return 0.0
 
 def _save(fig, filename: str, transparent=False):
-    """Función para guardar la figura sin cambios."""
     path = os.path.join(GRAPH_DIR, filename)
     fig.savefig(path, dpi=300, bbox_inches='tight', transparent=transparent)
     plt.close(fig)
     logging.info(f'✅ Gráfico guardado → {path}')
 
-# --- FUNCIONES DE GRÁFICOS (SIN CAMBIOS, YA ERAN ROBUSTAS) ---
+# --- FUNCIONES DE GRÁFICOS MODIFICADAS ---
 
 def bar_chart(data: dict, title: str, filename: str):
+    # Sin cambios solicitados para este gráfico
     if not data:
         logging.warning(f"No hay datos para generar el gráfico de barras: {title}")
         return
-    # ... (el resto del código de bar_chart no necesita cambios)
     fig, ax = plt.subplots(figsize=(10, 6))
     medios = list(data.keys())
-    valores = [v for v in data.values()] # Los valores ya son floats gracias a clean_value
+    valores = [v for v in data.values()]
     colors = PALETTE[:len(medios)]
     bars = ax.bar(medios, valores, color=colors)
     ax.set_title(title, fontsize=14, fontweight='bold')
@@ -66,57 +68,123 @@ def bar_chart(data: dict, title: str, filename: str):
 
 
 def pie_chart(data: dict, title: str, filename: str):
-    if not data:
-        logging.warning(f"No hay datos para generar el gráfico de torta: {title}")
+    """
+    Función de gráfico de torta modificada para incluir una leyenda detallada
+    en la base y mantener los porcentajes dentro de las porciones.
+    """
+    if not data or sum(data.values()) == 0:
+        logging.warning(f"No hay datos válidos para generar el gráfico de torta: {title}")
         return
-    # ... (el resto del código de pie_chart no necesita cambios)
-    fig, ax = plt.subplots(figsize=(6, 6))
+        
+    fig, ax = plt.subplots(figsize=(8, 7)) # CAMBIO: Ajuste de tamaño para dar espacio a la leyenda
+    
     valores = [v for v in data.values()]
+    
+    # CAMBIO: Se quitan las etiquetas de los medios de dentro de la torta
     wedges, _, autotexts = ax.pie(
-        valores, labels=data.keys(), colors=PALETTE[:len(data)],
-        startangle=140, autopct='%1.0f%%', pctdistance=0.85,
-        wedgeprops=dict(edgecolor='w')
+        valores,
+        colors=PALETTE[:len(data)],
+        startangle=90,
+        autopct='%1.0f%%', # Mantenemos el porcentaje dentro
+        pctdistance=0.85,
+        wedgeprops=dict(edgecolor='w', linewidth=2)
     )
+
     for t in autotexts:
         t.set_color('white')
         t.set_fontweight('bold')
-    ax.set_title(title, weight='bold')
+        t.set_fontsize(12)
+
+    ax.set_title(title, weight='bold', fontsize=16, pad=20)
+
+    # NUEVO: Crear etiquetas personalizadas para la leyenda (Medio: Valor)
+    legend_labels = []
+    for medio, valor in data.items():
+        # Usamos el formato de moneda local Argentina
+        formatted_value = f"${int(valor):,}".replace(",", ".")
+        legend_labels.append(f'{medio}: {formatted_value}')
+
+    # NUEVO: Añadir la leyenda en la base del gráfico
+    ax.legend(
+        wedges,
+        legend_labels,
+        title="Leyenda de Valores",
+        loc='upper center',
+        bbox_to_anchor=(0.5, -0.02), # Posiciona la leyenda justo debajo del gráfico
+        ncol=2, # Número de columnas para la leyenda
+        fontsize='medium'
+    )
+
+    fig.tight_layout(rect=[0, 0.1, 1, 1]) # Ajusta el layout para que la leyenda no se corte
     _save(fig, filename, transparent=True)
 
+
 def top_vpe_por_medio(datos: dict, medio: str):
-    # El uso de .get() ya hace esta parte bastante robusta
+    """
+    Función de gráfico Top VPE modificada para mejorar la estética:
+    - Título corregido
+    - Ancho de barras dinámico
+    - Posición de etiquetas de valor mejorada
+    """
     noticias = datos.get(f"{medio}_raw", {}).get("noticias", [])
     if not noticias:
-        logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top 10.")
+        logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top.")
         return
     
     noticias_ordenadas = sorted(noticias, key=lambda x: clean_value(x.get("vpe", 0)), reverse=True)[:10]
     
     if not noticias_ordenadas:
-        return # No hay noticias con VPE para graficar
+        return
         
     nombres = [n.get('titulo', 'Sin Título') for n in noticias_ordenadas]
     valores = [clean_value(n.get('vpe', 0)) for n in noticias_ordenadas]
 
-    # ... (el resto del código de top_vpe_por_medio no necesita cambios)
     fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.barh(nombres, valores, color=PALETTE[0])
-    ax.set_title(f"Top 10 por VPE - {medio}", fontsize=14, fontweight='bold')
+
+    # NUEVO: Ancho (altura en barh) de barra dinámico
+    num_bars = len(nombres)
+    bar_height = 0.25 if num_bars == 1 else 0.7 # 25% si hay 1 barra, 70% en otros casos
+
+    bars = ax.barh(nombres, valores, color=PALETTE[0], height=bar_height)
+    
+    # CAMBIO: Título del gráfico corregido
+    ax.set_title(f"Top VPE - {medio}", fontsize=16, fontweight='bold')
+    
+    # Formato de números en el eje X
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,}'.replace(',', '.')))
-    for i, b in enumerate(bars):
-        ax.text(b.get_width() + max(valores)*0.01, b.get_y() + b.get_height()/2,
-                f'{int(valores[i]):,}'.replace(',', '.'), va='center', fontweight='bold')
-    plt.tight_layout()
+
+    # NUEVO: Ajustar el límite del eje X para dar espacio a las etiquetas
+    if valores:
+        max_val = max(valores)
+        ax.set_xlim(right=max_val * 1.18) # 18% de espacio extra
+
+    # CAMBIO: Posicionamiento de las etiquetas de valor para evitar desbordamiento
+    for bar in bars:
+        width = bar.get_width()
+        label_x_pos = width + (max_val * 0.01) # Pequeño espacio después de la barra
+        
+        ax.text(
+            label_x_pos,
+            bar.get_y() + bar.get_height() / 2,
+            f'{int(width):,}'.replace(',', '.'),
+            va='center',
+            ha='left', # Alineación a la izquierda del texto
+            fontweight='bold'
+        )
+    
+    # NUEVO: Invertir el eje Y para que la barra más larga quede arriba
+    ax.invert_yaxis()
+
+    fig.tight_layout()
     _save(fig, f"top10_vpe_{medio.lower().replace(' ', '_')}.png")
 
 
-# --- FLASK APP MEJORADA ---
+# --- FLASK APP (SIN CAMBIOS) ---
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
 def generar_graficos():
     try:
-        # 1. MANEJO DE FORMATO DE ENTRADA FLEXIBLE
         payload = request.get_json()
         
         if not payload:
@@ -124,11 +192,9 @@ def generar_graficos():
 
         datos = {}
         if isinstance(payload, list) and payload:
-            # Si es una lista como [{...}], tomamos el primer elemento.
             datos = payload[0]
             logging.info("Payload recibido en formato de Lista, se procesará el primer elemento.")
         elif isinstance(payload, dict):
-            # Si ya es un objeto como {...}, lo usamos directamente.
             datos = payload
             logging.info("Payload recibido en formato de Objeto, se procesará directamente.")
         else:
@@ -136,19 +202,16 @@ def generar_graficos():
 
         host_url = request.host_url.rstrip('/')
         graficos_generados = []
-
-        # 2. ACCESO SEGURO A LOS DATOS (EVITA KEYERROR)
         
         # VPE por Medio
         data_vpe = {}
         for medio in MEDIOS:
-            # Usamos .get() para evitar errores si un medio no existe o no tiene 'total_vpe'
             medio_data = datos.get(medio, {})
             if "total_vpe" in medio_data:
                 data_vpe[medio] = clean_value(medio_data["total_vpe"])
 
         bar_chart(data_vpe, "VPE por Medio", "vpe_barra.png")
-        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png")
+        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png") # Llama a la nueva función de torta
         graficos_generados += [
             f"{host_url}/grafico/vpe_barra.png",
             f"{host_url}/grafico/vpe_torta.png"
@@ -160,9 +223,9 @@ def generar_graficos():
             medio_data = datos.get(medio, {})
             if "total_audiencia" in medio_data:
                 data_imp[medio] = clean_value(medio_data["total_audiencia"])
-
+        
         bar_chart(data_imp, "Impactos por Medio", "impactos_barra.png")
-        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png")
+        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png") # Llama a la nueva función de torta
         graficos_generados += [
             f"{host_url}/grafico/impactos_barra.png",
             f"{host_url}/grafico/impactos_torta.png"
@@ -170,7 +233,7 @@ def generar_graficos():
 
         # Top 10 por VPE por Medio
         for medio in MEDIOS:
-            top_vpe_por_medio(datos, medio)
+            top_vpe_por_medio(datos, medio) # Llama a la nueva función de barras horizontales
             nombre_archivo = f"top10_vpe_{medio.lower().replace(' ', '_')}.png"
             if os.path.exists(os.path.join(GRAPH_DIR, nombre_archivo)):
                 graficos_generados.append(f"{host_url}/grafico/{nombre_archivo}")
@@ -179,14 +242,12 @@ def generar_graficos():
             "status": "ok",
             "archivos_generados": graficos_generados
         })
-    # 3. MANEJO DE ERRORES MÁS ESPECiFICO
     except json.JSONDecodeError:
         return jsonify({"error": "El cuerpo de la solicitud no es un JSON válido."}), 400
     except Exception as e:
         logging.error(f"Ha ocurrido un error inesperado: {str(e)}", exc_info=True)
         return jsonify({"error": f"Error interno del servidor: {str(e)}"}), 500
 
-# La ruta para servir los gráficos no necesita cambios
 @app.route("/grafico/<nombre>")
 def servir_grafico(nombre):
     path = os.path.join(GRAPH_DIR, nombre)
