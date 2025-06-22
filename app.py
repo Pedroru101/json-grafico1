@@ -87,7 +87,7 @@ def generar_graficos():
         if not isinstance(payload, list) or not payload:
             return jsonify({"error": "El JSON debe ser una lista con un objeto"}), 400
 
-        datos = payload[0]
+        datos = payload
         host_url = request.host_url.rstrip('/')
 
         graficos_generados = []
