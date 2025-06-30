@@ -135,21 +135,28 @@ def top_vpe_por_medio(datos: dict, medio: str):
     - Título corregido
     - Ancho de barras dinámico
     - Posición de etiquetas de valor mejorada con estrategia robusta
-    - Coloca el símbolo de euro después del valor.
+    - Agrupa noticias por título y suma los VPE para evitar duplicados.
     """
     noticias = datos.get(f"{medio}_raw", {}).get("noticias", [])
     if not noticias:
         logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top VPE de {medio}.")
         return
 
-    noticias_ordenadas = sorted(noticias, key=lambda x: clean_value(x.get("vpe", 0)), reverse=True)[:10]
+    # Agrupar noticias por título y sumar los VPE
+    vpe_por_titulo = {}
+    for n in noticias:
+        titulo = n.get('titulo', 'Sin Título')
+        vpe = clean_value(n.get('vpe', 0))
+        vpe_por_titulo[titulo] = vpe_por_titulo.get(titulo, 0) + vpe
 
+    # Ordenar por VPE descendente y tomar los top 10
+    noticias_ordenadas = sorted(vpe_por_titulo.items(), key=lambda x: x[1], reverse=True)[:10]
     if not noticias_ordenadas:
         logging.info(f"No hay noticias con VPE válido para el gráfico Top VPE de {medio}.")
         return
 
-    nombres = [n.get('titulo', 'Sin Título') for n in noticias_ordenadas]
-    valores = [clean_value(n.get('vpe', 0)) for n in noticias_ordenadas]
+    nombres = [t for t, _ in noticias_ordenadas]
+    valores = [v for _, v in noticias_ordenadas]
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -176,9 +183,6 @@ def top_vpe_por_medio(datos: dict, medio: str):
     # Nueva estrategia de posicionamiento de etiquetas
     for bar in bars:
         width = bar.get_width()
-        # Calcular desplazamiento dinámico:
-        # - Para valores pequeños, usar un desplazamiento mínimo fijo
-        # - Para valores mayores, usar un porcentaje del valor máximo
         min_offset = 0.05 * ax.get_xlim()[1]  # 5% del límite del eje X como mínimo
         dynamic_offset = 0.02 * max_val if max_val != 0 else min_offset  # 2% del valor máximo o mínimo
         label_x_pos = width + max(min_offset, dynamic_offset)  # Usar el mayor entre ambos
@@ -197,8 +201,6 @@ def top_vpe_por_medio(datos: dict, medio: str):
 
     fig.tight_layout()
     _save(fig, f"top10_vpe_{medio.lower().replace(' ', '_')}.png")
-
-
 # --- FLASK APP ---
 app = Flask(__name__)
 
