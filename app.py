@@ -21,22 +21,19 @@ def clean_value(value: str | float | int) -> float:
     if value is None:
         return 0.0
     try:
-        # Reemplaza comas por puntos para decimales y luego quita los puntos de miles
-        cleaned_string = str(value).replace(',', '.')
-        # Como los datos de entrada pueden tener '.' como separador de miles, los quitamos antes de convertir
-        # Esto asume que no hay decimales importantes después del punto.
-        if '.' in cleaned_string:
-            # Si el punto está seguido por 3 dígitos y no es el único punto, es probable que sea un separador de miles.
-            parts = cleaned_string.split('.')
-            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3): # Ejemplo: "1.234.567" o "12.345" (si el . es de miles)
-                cleaned_string = cleaned_string.replace('.', '')
-            # Si es un solo punto y le sigue algo que no son 3 dígitos (ej. "123.45"), es un decimal.
-            # No hacemos nada en ese caso, ya que .replace(',', '.') ya lo manejó.
-
-        return float(cleaned_string)
+        string = str(value).strip()
+        if ',' in string and '.' not in string:
+            # Valor con coma decimal: "123,45" → "123.45"
+            string = string.replace(',', '.')
+        elif '.' in string:
+            parts = string.split('.')
+            if all(len(p) == 3 for p in parts[1:]):  # Ej: 1.234.567
+                string = string.replace('.', '')
+        return float(string)
     except (ValueError, TypeError):
         logging.warning(f"No se pudo convertir el valor '{value}' a número. Se usará 0.0.")
         return 0.0
+
 
 def _save(fig, filename: str, transparent=False):
     path = os.path.join(GRAPH_DIR, filename)
