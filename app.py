@@ -134,8 +134,8 @@ def top_vpe_por_medio(datos: dict, medio: str):
     Función de gráfico Top VPE modificada para mejorar la estética:
     - Título corregido
     - Ancho de barras dinámico
-    - Posición de etiquetas de valor mejorada
-    - Ahora coloca el símbolo de euro después del valor.
+    - Posición de etiquetas de valor mejorada con estrategia robusta
+    - Coloca el símbolo de euro después del valor.
     """
     noticias = datos.get(f"{medio}_raw", {}).get("noticias", [])
     if not noticias:
@@ -162,28 +162,30 @@ def top_vpe_por_medio(datos: dict, medio: str):
     # Título del gráfico corregido
     ax.set_title(f"Top VPE - {medio}", fontsize=16, fontweight='bold')
 
-    # CAMBIO: Formato de números en el eje X para que el euro vaya después.
+    # Formato de números en el eje X para que el euro vaya después
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.')))
 
     # Ajustar el límite del eje X para dar espacio a las etiquetas
     if valores:
         max_val = max(valores)
-        # Asegurarse de que max_val no sea cero para evitar divisiones por cero
         if max_val == 0:
-            ax.set_xlim(right=1) # Establecer un límite mínimo si todos los valores son 0
+            ax.set_xlim(right=1)  # Establecer un límite mínimo si todos los valores son 0
         else:
-            ax.set_xlim(right=max_val * 1.18)
+            ax.set_xlim(right=max_val * 1.25)  # Aumentar espacio para etiquetas
 
-    # CAMBIO: Posicionamiento de las etiquetas de valor para evitar desbordamiento
+    # Nueva estrategia de posicionamiento de etiquetas
     for bar in bars:
         width = bar.get_width()
-        # Ajustar la posición de la etiqueta de valor para que no se superponga
-        label_x_pos = width + (max_val * 0.01 if max_val != 0 else 0.1) # Pequeño offset
+        # Calcular desplazamiento dinámico:
+        # - Para valores pequeños, usar un desplazamiento mínimo fijo
+        # - Para valores mayores, usar un porcentaje del valor máximo
+        min_offset = 0.05 * ax.get_xlim()[1]  # 5% del límite del eje X como mínimo
+        dynamic_offset = 0.02 * max_val if max_val != 0 else min_offset  # 2% del valor máximo o mínimo
+        label_x_pos = width + max(min_offset, dynamic_offset)  # Usar el mayor entre ambos
 
         ax.text(
             label_x_pos,
             bar.get_y() + bar.get_height() / 2,
-            # CAMBIO: Etiqueta del valor en la barra para que el euro vaya después.
             f'{int(width):,} €'.replace(',', '.'),
             va='center',
             ha='left',
