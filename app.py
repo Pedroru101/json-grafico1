@@ -45,7 +45,10 @@ def _save(fig, filename: str, transparent=False):
 # --- FUNCIONES DE GRÁFICOS MODIFICADAS ---
 
 def bar_chart(data: dict, title: str, filename: str):
-    # Sin cambios solicitados para este gráfico
+    """
+    Función de gráfico de barras (vertical) para VPE/VC/Impactos.
+    Ahora coloca el símbolo de euro después del valor.
+    """
     if not data:
         logging.warning(f"No hay datos para generar el gráfico de barras: {title}")
         return
@@ -56,11 +59,17 @@ def bar_chart(data: dict, title: str, filename: str):
     bars = ax.bar(medios, valores, color=colors)
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xlabel('Medios', fontsize=12)
-    ax.set_ylabel('Valor (€)', fontsize=12)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,}'.replace(',', '.')))
+    # CAMBIO: Etiqueta del eje Y ahora con el símbolo de euro después.
+    ax.set_ylabel('Valor', fontsize=12) 
+    
+    # CAMBIO: Formateador del eje Y para que el euro vaya después.
+    # Usamos '{:,.0f} €' para formatear como entero con separador de miles y luego el símbolo de euro.
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.'))) 
+    
     for b in bars:
         y = b.get_height()
-        ax.text(b.get_x() + b.get_width()/2, y * 1.01, f'{int(y):,}'.replace(',', '.'),
+        # CAMBIO: Etiqueta de la barra para que el euro vaya después.
+        ax.text(b.get_x() + b.get_width()/2, y * 1.01, f'{int(y):,} €'.replace(',', '.'),
                 ha='center', fontweight='bold', va='bottom')
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
@@ -71,21 +80,22 @@ def pie_chart(data: dict, title: str, filename: str):
     """
     Función de gráfico de torta modificada para incluir una leyenda detallada
     en la base y mantener los porcentajes dentro de las porciones.
+    Ahora coloca el símbolo de euro después del valor en la leyenda.
     """
     if not data or sum(data.values()) == 0:
         logging.warning(f"No hay datos válidos para generar el gráfico de torta: {title}")
         return
         
-    fig, ax = plt.subplots(figsize=(8, 7)) # CAMBIO: Ajuste de tamaño para dar espacio a la leyenda
-    
+    fig, ax = plt.subplots(figsize=(8, 7)) 
+        
     valores = [v for v in data.values()]
-    
-    # CAMBIO: Se quitan las etiquetas de los medios de dentro de la torta
+        
+    # Se quitan las etiquetas de los medios de dentro de la torta
     wedges, _, autotexts = ax.pie(
         valores,
         colors=PALETTE[:len(data)],
         startangle=90,
-        autopct='%1.0f%%', # Mantenemos el porcentaje dentro
+        autopct='%1.0f%%', 
         pctdistance=0.85,
         wedgeprops=dict(edgecolor='w', linewidth=2)
     )
@@ -97,25 +107,25 @@ def pie_chart(data: dict, title: str, filename: str):
 
     ax.set_title(title, weight='bold', fontsize=16, pad=20)
 
-    # NUEVO: Crear etiquetas personalizadas para la leyenda (Medio: Valor)
+    # NUEVO: Crear etiquetas personalizadas para la leyenda (Medio: Valor €)
     legend_labels = []
     for medio, valor in data.items():
-        # Usamos el formato de moneda local Argentina
-        formatted_value = f"${int(valor):,}".replace(",", ".")
+        # CAMBIO: Formato del valor en la leyenda para que el euro vaya después.
+        formatted_value = f"{int(valor):,} €".replace(",", ".")
         legend_labels.append(f'{medio}: {formatted_value}')
 
-    # NUEVO: Añadir la leyenda en la base del gráfico
+    # Añadir la leyenda en la base del gráfico
     ax.legend(
         wedges,
         legend_labels,
         title="Leyenda de Valores",
         loc='upper center',
-        bbox_to_anchor=(0.5, -0.02), # Posiciona la leyenda justo debajo del gráfico
-        ncol=2, # Número de columnas para la leyenda
+        bbox_to_anchor=(0.5, -0.02), 
+        ncol=2, 
         fontsize='medium'
     )
 
-    fig.tight_layout(rect=[0, 0.1, 1, 1]) # Ajusta el layout para que la leyenda no se corte
+    fig.tight_layout(rect=[0, 0.1, 1, 1]) 
     _save(fig, filename, transparent=True)
 
 
@@ -125,14 +135,15 @@ def top_vpe_por_medio(datos: dict, medio: str):
     - Título corregido
     - Ancho de barras dinámico
     - Posición de etiquetas de valor mejorada
+    - Ahora coloca el símbolo de euro después del valor.
     """
     noticias = datos.get(f"{medio}_raw", {}).get("noticias", [])
     if not noticias:
         logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top.")
         return
-    
+        
     noticias_ordenadas = sorted(noticias, key=lambda x: clean_value(x.get("vpe", 0)), reverse=True)[:10]
-    
+        
     if not noticias_ordenadas:
         return
         
@@ -141,38 +152,39 @@ def top_vpe_por_medio(datos: dict, medio: str):
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # NUEVO: Ancho (altura en barh) de barra dinámico
+    # Ancho (altura en barh) de barra dinámico
     num_bars = len(nombres)
-    bar_height = 0.25 if num_bars == 1 else 0.7 # 25% si hay 1 barra, 70% en otros casos
+    bar_height = 0.25 if num_bars == 1 else 0.7 
 
     bars = ax.barh(nombres, valores, color=PALETTE[0], height=bar_height)
-    
-    # CAMBIO: Título del gráfico corregido
+        
+    # Título del gráfico corregido
     ax.set_title(f"Top VPE - {medio}", fontsize=16, fontweight='bold')
-    
-    # Formato de números en el eje X
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,}'.replace(',', '.')))
+        
+    # CAMBIO: Formato de números en el eje X para que el euro vaya después.
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.')))
 
-    # NUEVO: Ajustar el límite del eje X para dar espacio a las etiquetas
+    # Ajustar el límite del eje X para dar espacio a las etiquetas
     if valores:
         max_val = max(valores)
-        ax.set_xlim(right=max_val * 1.18) # 18% de espacio extra
+        ax.set_xlim(right=max_val * 1.18) 
 
     # CAMBIO: Posicionamiento de las etiquetas de valor para evitar desbordamiento
     for bar in bars:
         width = bar.get_width()
-        label_x_pos = width + (max_val * 0.01) # Pequeño espacio después de la barra
-        
+        label_x_pos = width + (max_val * 0.01) 
+            
         ax.text(
             label_x_pos,
             bar.get_y() + bar.get_height() / 2,
-            f'{int(width):,}'.replace(',', '.'),
+            # CAMBIO: Etiqueta del valor en la barra para que el euro vaya después.
+            f'{int(width):,} €'.replace(',', '.'),
             va='center',
-            ha='left', # Alineación a la izquierda del texto
+            ha='left', 
             fontweight='bold'
         )
-    
-    # NUEVO: Invertir el eje Y para que la barra más larga quede arriba
+        
+    # Invertir el eje Y para que la barra más larga quede arriba
     ax.invert_yaxis()
 
     fig.tight_layout()
@@ -211,7 +223,7 @@ def generar_graficos():
                 data_vpe[medio] = clean_value(medio_data["total_vpe"])
 
         bar_chart(data_vpe, "VPE por Medio", "vpe_barra.png")
-        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png") # Llama a la nueva función de torta
+        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png") 
         graficos_generados += [
             f"{host_url}/grafico/vpe_barra.png",
             f"{host_url}/grafico/vpe_torta.png"
@@ -225,7 +237,7 @@ def generar_graficos():
                 data_imp[medio] = clean_value(medio_data["total_audiencia"])
         
         bar_chart(data_imp, "Impactos por Medio", "impactos_barra.png")
-        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png") # Llama a la nueva función de torta
+        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png") 
         graficos_generados += [
             f"{host_url}/grafico/impactos_barra.png",
             f"{host_url}/grafico/impactos_torta.png"
@@ -233,7 +245,7 @@ def generar_graficos():
 
         # Top 10 por VPE por Medio
         for medio in MEDIOS:
-            top_vpe_por_medio(datos, medio) # Llama a la nueva función de barras horizontales
+            top_vpe_por_medio(datos, medio) 
             nombre_archivo = f"top10_vpe_{medio.lower().replace(' ', '_')}.png"
             if os.path.exists(os.path.join(GRAPH_DIR, nombre_archivo)):
                 graficos_generados.append(f"{host_url}/grafico/{nombre_archivo}")
