@@ -15,7 +15,7 @@ os.makedirs(GRAPH_DIR, exist_ok=True)
 PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FF6D00', '#673AB7'] # Paleta extendida por si acaso
 MEDIOS = ['Medios Digitales', 'Prensa', 'Radio', 'TV']
 
-# --- FUNCIONES UTILITARIAS (SIN CAMBIOS) ---
+# --- FUNCIONES UTILITARIAS ---
 
 def clean_value(value: str | float | int) -> float:
     if value is None:
@@ -26,10 +26,12 @@ def clean_value(value: str | float | int) -> float:
         # Como los datos de entrada pueden tener '.' como separador de miles, los quitamos antes de convertir
         # Esto asume que no hay decimales importantes después del punto.
         if '.' in cleaned_string:
-             # Si el punto está seguido por 3 dígitos y no es el único punto, es probable que sea un separador de miles.
-             parts = cleaned_string.split('.')
-             if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
-                 cleaned_string = cleaned_string.replace('.', '')
+            # Si el punto está seguido por 3 dígitos y no es el único punto, es probable que sea un separador de miles.
+            parts = cleaned_string.split('.')
+            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3): # Ejemplo: "1.234.567" o "12.345" (si el . es de miles)
+                cleaned_string = cleaned_string.replace('.', '')
+            # Si es un solo punto y le sigue algo que no son 3 dígitos (ej. "123.45"), es un decimal.
+            # No hacemos nada en ese caso, ya que .replace(',', '.') ya lo manejó.
 
         return float(cleaned_string)
     except (ValueError, TypeError):
@@ -49,8 +51,8 @@ def bar_chart(data: dict, title: str, filename: str):
     Función de gráfico de barras (vertical) para VPE/VC/Impactos.
     Ahora coloca el símbolo de euro después del valor.
     """
-    if not data:
-        logging.warning(f"No hay datos para generar el gráfico de barras: {title}")
+    if not data or sum(data.values()) == 0: # Añadida verificación para datos vacíos o con suma cero
+        logging.warning(f"No hay datos válidos para generar el gráfico de barras: {title}. Archivo: {filename}")
         return
     fig, ax = plt.subplots(figsize=(10, 6))
     medios = list(data.keys())
@@ -60,12 +62,13 @@ def bar_chart(data: dict, title: str, filename: str):
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xlabel('Medios', fontsize=12)
     # CAMBIO: Etiqueta del eje Y ahora con el símbolo de euro después.
-    ax.set_ylabel('Valor', fontsize=12) 
-    
+    ax.set_ylabel('Valor', fontsize=12)
+
     # CAMBIO: Formateador del eje Y para que el euro vaya después.
     # Usamos '{:,.0f} €' para formatear como entero con separador de miles y luego el símbolo de euro.
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.'))) 
-    
+    # Se añade un control para valores negativos o flotantes si fuera necesario, aunque para VPE/VC suelen ser enteros positivos.
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.')))
+
     for b in bars:
         y = b.get_height()
         # CAMBIO: Etiqueta de la barra para que el euro vaya después.
@@ -83,19 +86,19 @@ def pie_chart(data: dict, title: str, filename: str):
     Ahora coloca el símbolo de euro después del valor en la leyenda.
     """
     if not data or sum(data.values()) == 0:
-        logging.warning(f"No hay datos válidos para generar el gráfico de torta: {title}")
+        logging.warning(f"No hay datos válidos para generar el gráfico de torta: {title}. Archivo: {filename}")
         return
-        
-    fig, ax = plt.subplots(figsize=(8, 7)) 
-        
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+
     valores = [v for v in data.values()]
-        
+
     # Se quitan las etiquetas de los medios de dentro de la torta
     wedges, _, autotexts = ax.pie(
         valores,
         colors=PALETTE[:len(data)],
         startangle=90,
-        autopct='%1.0f%%', 
+        autopct='%1.0f%%',
         pctdistance=0.85,
         wedgeprops=dict(edgecolor='w', linewidth=2)
     )
@@ -120,12 +123,12 @@ def pie_chart(data: dict, title: str, filename: str):
         legend_labels,
         title="Leyenda de Valores",
         loc='upper center',
-        bbox_to_anchor=(0.5, -0.02), 
-        ncol=2, 
+        bbox_to_anchor=(0.5, -0.02),
+        ncol=2,
         fontsize='medium'
     )
 
-    fig.tight_layout(rect=[0, 0.1, 1, 1]) 
+    fig.tight_layout(rect=[0, 0.1, 1, 1])
     _save(fig, filename, transparent=True)
 
 
@@ -139,14 +142,15 @@ def top_vpe_por_medio(datos: dict, medio: str):
     """
     noticias = datos.get(f"{medio}_raw", {}).get("noticias", [])
     if not noticias:
-        logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top.")
+        logging.info(f"No se encontraron noticias en '{medio}_raw' para el gráfico Top VPE de {medio}.")
         return
-        
+
     noticias_ordenadas = sorted(noticias, key=lambda x: clean_value(x.get("vpe", 0)), reverse=True)[:10]
-        
+
     if not noticias_ordenadas:
+        logging.info(f"No hay noticias con VPE válido para el gráfico Top VPE de {medio}.")
         return
-        
+
     nombres = [n.get('titulo', 'Sin Título') for n in noticias_ordenadas]
     valores = [clean_value(n.get('vpe', 0)) for n in noticias_ordenadas]
 
@@ -154,36 +158,41 @@ def top_vpe_por_medio(datos: dict, medio: str):
 
     # Ancho (altura en barh) de barra dinámico
     num_bars = len(nombres)
-    bar_height = 0.25 if num_bars == 1 else 0.7 
+    bar_height = 0.25 if num_bars == 1 else 0.7
 
     bars = ax.barh(nombres, valores, color=PALETTE[0], height=bar_height)
-        
+
     # Título del gráfico corregido
     ax.set_title(f"Top VPE - {medio}", fontsize=16, fontweight='bold')
-        
+
     # CAMBIO: Formato de números en el eje X para que el euro vaya después.
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,} €'.replace(',', '.')))
 
     # Ajustar el límite del eje X para dar espacio a las etiquetas
     if valores:
         max_val = max(valores)
-        ax.set_xlim(right=max_val * 1.18) 
+        # Asegurarse de que max_val no sea cero para evitar divisiones por cero
+        if max_val == 0:
+            ax.set_xlim(right=1) # Establecer un límite mínimo si todos los valores son 0
+        else:
+            ax.set_xlim(right=max_val * 1.18)
 
     # CAMBIO: Posicionamiento de las etiquetas de valor para evitar desbordamiento
     for bar in bars:
         width = bar.get_width()
-        label_x_pos = width + (max_val * 0.01) 
-            
+        # Ajustar la posición de la etiqueta de valor para que no se superponga
+        label_x_pos = width + (max_val * 0.01 if max_val != 0 else 0.1) # Pequeño offset
+
         ax.text(
             label_x_pos,
             bar.get_y() + bar.get_height() / 2,
             # CAMBIO: Etiqueta del valor en la barra para que el euro vaya después.
             f'{int(width):,} €'.replace(',', '.'),
             va='center',
-            ha='left', 
+            ha='left',
             fontweight='bold'
         )
-        
+
     # Invertir el eje Y para que la barra más larga quede arriba
     ax.invert_yaxis()
 
@@ -191,18 +200,20 @@ def top_vpe_por_medio(datos: dict, medio: str):
     _save(fig, f"top10_vpe_{medio.lower().replace(' ', '_')}.png")
 
 
-# --- FLASK APP (SIN CAMBIOS) ---
+# --- FLASK APP ---
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
 def generar_graficos():
     try:
         payload = request.get_json()
-        
+
         if not payload:
             return jsonify({"error": "El cuerpo de la solicitud está vacío o no es JSON válido"}), 400
 
         datos = {}
+        # Asumiendo que el payload es una lista de un solo diccionario
+        # o directamente un diccionario.
         if isinstance(payload, list) and payload:
             datos = payload[0]
             logging.info("Payload recibido en formato de Lista, se procesará el primer elemento.")
@@ -214,38 +225,45 @@ def generar_graficos():
 
         host_url = request.host_url.rstrip('/')
         graficos_generados = []
-        
+
         # VPE por Medio
         data_vpe = {}
         for medio in MEDIOS:
             medio_data = datos.get(medio, {})
             if "total_vpe" in medio_data:
                 data_vpe[medio] = clean_value(medio_data["total_vpe"])
+            else:
+                logging.warning(f"No se encontró 'total_vpe' para el medio '{medio}' en el nivel superior. Se omitirá para VPE.")
+
 
         bar_chart(data_vpe, "VPE por Medio", "vpe_barra.png")
-        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png") 
-        graficos_generados += [
-            f"{host_url}/grafico/vpe_barra.png",
-            f"{host_url}/grafico/vpe_torta.png"
-        ]
+        pie_chart(data_vpe, "Distribución de VPE", "vpe_torta.png")
+        if data_vpe: # Solo añadir si se generaron los gráficos
+            graficos_generados += [
+                f"{host_url}/grafico/vpe_barra.png",
+                f"{host_url}/grafico/vpe_torta.png"
+            ]
 
-        # Impactos por Medio
+        # Impactos por Medio (CORRECCIÓN APLICADA AQUÍ)
         data_imp = {}
         for medio in MEDIOS:
-            medio_data = datos.get(medio, {})
-            if "total_audiencia" in medio_data:
-                data_imp[medio] = clean_value(medio_data["total_audiencia"])
-        
+            raw_medio_data = datos.get(f"{medio}_raw", {}) # Accede a la clave "TV_raw", "Radio_raw", etc.
+            if "total_vc" in raw_medio_data: # Ahora busca 'total_vc'
+                data_imp[medio] = clean_value(raw_medio_data["total_vc"])
+            else:
+                logging.warning(f"No se encontró 'total_vc' para el medio '{medio}' en '{medio}_raw'. Se omitirá para Impactos.")
+
         bar_chart(data_imp, "Impactos por Medio", "impactos_barra.png")
-        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png") 
-        graficos_generados += [
-            f"{host_url}/grafico/impactos_barra.png",
-            f"{host_url}/grafico/impactos_torta.png"
-        ]
+        pie_chart(data_imp, "Distribución de Impactos", "impactos_torta.png")
+        if data_imp: # Solo añadir si se generaron los gráficos
+            graficos_generados += [
+                f"{host_url}/grafico/impactos_barra.png",
+                f"{host_url}/grafico/impactos_torta.png"
+            ]
 
         # Top 10 por VPE por Medio
         for medio in MEDIOS:
-            top_vpe_por_medio(datos, medio) 
+            top_vpe_por_medio(datos, medio)
             nombre_archivo = f"top10_vpe_{medio.lower().replace(' ', '_')}.png"
             if os.path.exists(os.path.join(GRAPH_DIR, nombre_archivo)):
                 graficos_generados.append(f"{host_url}/grafico/{nombre_archivo}")
